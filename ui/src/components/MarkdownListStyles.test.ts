@@ -16,8 +16,8 @@ function cssBlock(selector: string): string {
   return stylesheet.slice(bodyStart + 1, bodyEnd);
 }
 
-function remPaddingLeft(selector: string): number {
-  const padding = cssBlock(selector).match(/padding-left:\s*([0-9.]+)rem/);
+function remPaddingInlineStart(selector: string): number {
+  const padding = cssBlock(selector).match(/padding-inline-start:\s*([0-9.]+)rem/);
 
   expect(padding?.[1], `Expected ${selector} to use rem padding`).toBeDefined();
   return Number(padding?.[1]);
@@ -25,7 +25,7 @@ function remPaddingLeft(selector: string): number {
 
 describe("rendered markdown list styles", () => {
   it("keeps unordered-list gutters compact while giving ordered markers enough room", () => {
-    expect(remPaddingLeft(".paperclip-markdown :where(ul, ol)")).toBeLessThan(2.5);
-    expect(remPaddingLeft(".paperclip-markdown ol")).toBeGreaterThanOrEqual(2.5);
+    expect(remPaddingInlineStart(".paperclip-markdown :where(ul, ol)")).toBeLessThan(2.5);
+    expect(remPaddingInlineStart(".paperclip-markdown ol")).toBeGreaterThanOrEqual(2.5);
   });
 });

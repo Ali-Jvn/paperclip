@@ -93,6 +93,24 @@ function renderMarkdown(
 }
 
 describe("MarkdownBody", () => {
+  it("lets text blocks pick their own direction so Persian renders right to left", () => {
+    const html = renderMarkdown("# عنوان\n\nسلام دنیا\n\n- مورد اول\n- مورد دوم\n\n> نقل قول\n\n```\nconst a = 1;\n```");
+
+    expect(html).toMatch(/<h1 dir="auto"[^>]*>عنوان<\/h1>/);
+    expect(html).toMatch(/<p dir="auto"[^>]*>سلام دنیا<\/p>/);
+    expect(html).toMatch(/<ul dir="rtl"/);
+    expect(html).toMatch(/<li dir="auto"[^>]*>مورد اول<\/li>/);
+    expect(html).toMatch(/<blockquote dir="rtl"/);
+    expect(html).not.toMatch(/<pre[^>]*dir=/);
+  });
+
+  it("keeps English lists and quotes left to right", () => {
+    const html = renderMarkdown("- first item\n- دوم\n\n> `code` then quote");
+
+    expect(html).toMatch(/<ul dir="ltr"/);
+    expect(html).toMatch(/<blockquote dir="ltr"/);
+  });
+
   it("renders markdown images without a resolver", () => {
     const html = renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
@@ -127,7 +145,7 @@ describe("MarkdownBody", () => {
       [], { mediaMode: "reference", resolveImageSrc },
     );
 
-    expect(html).toContain("<h1>Plan</h1>");
+    expect(html).toContain("<h1 dir=\"auto\">Plan</h1>");
     expect(html).toContain("<strong>Keep this step.</strong>");
     expect(html).toContain("Image: Evidence (https://provider.invalid/track.png)");
     expect(html).toContain('title="Provider image"');
@@ -260,8 +278,8 @@ describe("MarkdownBody", () => {
 
     expect(html).not.toContain("[&amp;_p]:whitespace-pre-line");
     expect(html).not.toContain("Parent item<br/>");
-    expect(html).toContain("<ol>");
-    expect(html).toContain("<ul>");
+    expect(html).toContain("<ol dir=\"ltr\">");
+    expect(html).toContain("<ul dir=\"ltr\">");
   });
 
   it("linkifies bare issue identifiers in markdown text", () => {

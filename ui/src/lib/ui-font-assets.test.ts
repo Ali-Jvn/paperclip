@@ -7,10 +7,10 @@ const uiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..
 const fontDir = path.join(uiRoot, "public", "fonts");
 const cssPath = path.join(uiRoot, "src", "index.css");
 
-const fontFiles = ["InterVariable.woff2", "InterVariable-Italic.woff2"];
+const fontFiles = ["InterVariable.woff2", "InterVariable-Italic.woff2", "VazirmatnNL-Variable.woff2"];
 
 describe("bundled UI font assets", () => {
-  it("ships the Inter variable font files used by the CSS", () => {
+  it("ships the Inter and Vazirmatn variable font files used by the CSS", () => {
     const css = readFileSync(cssPath, "utf8");
 
     for (const fileName of fontFiles) {
@@ -21,7 +21,9 @@ describe("bundled UI font assets", () => {
       expect(css).toContain(`url("/fonts/${fileName}")`);
     }
 
-    expect(css).toContain('--font-sans: "InterVariable"');
+    // Vazirmatn leads the stack but is limited to Persian/Arabic glyphs, so Latin text stays on Inter.
+    expect(css).toContain('--font-sans: "Vazirmatn", "InterVariable"');
+    expect(css).toMatch(/font-family: "Vazirmatn";[^}]*unicode-range: U\+0600-06FF/);
   });
 
   it("includes redistribution notice text for the bundled Inter files", () => {
@@ -32,5 +34,13 @@ describe("bundled UI font assets", () => {
     expect(notice).toContain("SIL Open Font License 1.1");
     expect(notice).toContain("InterVariable.woff2");
     expect(notice).toContain("InterVariable-Italic.woff2");
+  });
+
+  it("includes redistribution notice text for the bundled Vazirmatn file", () => {
+    const notice = readFileSync(path.join(fontDir, "NOTICE.md"), "utf8");
+
+    expect(notice).toContain("Vazirmatn");
+    expect(notice).toContain("v33.0.3");
+    expect(notice).toContain("VazirmatnNL-Variable.woff2");
   });
 });

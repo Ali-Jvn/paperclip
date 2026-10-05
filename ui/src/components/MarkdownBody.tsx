@@ -296,6 +296,47 @@ function remarkDropHtmlComments() {
   };
 }
 
+type HtmlAstNode = { type: string; tagName?: string; value?: string; properties?: Record<string, unknown>; children?: HtmlAstNode[] };
+
+const AUTO_DIRECTION_TAGS = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "td", "th"]);
+// `dir="auto"` skips descendants that carry their own `dir`, so a list or quote
+// would never see its items' text. These get a direction computed up front.
+const CONTAINER_DIRECTION_TAGS = new Set(["ul", "ol", "blockquote"]);
+const STRONG_LETTER = /\p{L}/u;
+const RTL_LETTER = /[\p{Script=Arabic}\p{Script=Hebrew}\p{Script=Syriac}\p{Script=Thaana}\p{Script=Nko}]/u;
+
+function firstStrongDirection(node: HtmlAstNode): "rtl" | "ltr" | null {
+  if (node.type === "text") {
+    for (const char of node.value ?? "") {
+      if (STRONG_LETTER.test(char)) return RTL_LETTER.test(char) ? "rtl" : "ltr";
+    }
+    return null;
+  }
+  if (node.tagName === "pre") return null;
+  for (const child of node.children ?? []) {
+    const direction = firstStrongDirection(child);
+    if (direction) return direction;
+  }
+  return null;
+}
+
+/** Lets each text block take its direction from its content, so Persian lists and quotes run right to left with their markers on the right. */
+function rehypeAutoDirection() {
+  return (tree: HtmlAstNode) => {
+    const visit = (node: HtmlAstNode) => {
+      if (node.type === "element" && node.tagName) {
+        const direction = AUTO_DIRECTION_TAGS.has(node.tagName) ? "auto"
+          : CONTAINER_DIRECTION_TAGS.has(node.tagName) ? firstStrongDirection(node) : null;
+        if (direction) node.properties = { dir: direction, ...node.properties };
+      }
+      node.children?.forEach(visit);
+    };
+    visit(tree);
+  };
+}
+
+const rehypePlugins: NonNullable<Options["rehypePlugins"]> = [rehypeAutoDirection];
+
 function mergeWrapStyle(style?: React.CSSProperties): React.CSSProperties {
   return {
     ...wrapAnywhereStyle,
@@ -961,6 +1002,7 @@ function MarkdownBodyImpl({
     >
       <Markdown
         remarkPlugins={remarkPlugins}
+        rehypePlugins={rehypePlugins}
         components={components}
         urlTransform={safeMarkdownUrlTransform}
       >
