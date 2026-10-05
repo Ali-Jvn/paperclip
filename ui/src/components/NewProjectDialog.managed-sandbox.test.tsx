@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { queryKeys } from "../lib/queryKeys";
+import { projectsApi } from "../api/projects";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -18,6 +19,7 @@ function act(callback: () => void) {
 
 vi.mock("../api/projects", () => ({ projectsApi: {
   create: vi.fn(),
+  createWorkspace: vi.fn(),
   repositoryOptions: vi.fn().mockResolvedValue({ repositories: [], connectionCount: 0, failedConnectionCount: 0 }),
 } }));
 vi.mock("../api/goals", () => ({ goalsApi: { list: vi.fn().mockResolvedValue([]) } }));
@@ -79,16 +81,21 @@ function documentText() {
   return document.body.textContent ?? "";
 }
 
+function setInputValue(input: Element, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+  setter.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 function localPathInput() {
   return document.body.querySelector('input[placeholder="/absolute/path/to/workspace"]');
 }
 
 describe("NewProjectDialog — source repositories across host policies", () => {
   it.each([
-    ["policy off", {}],
     ["policy unresolved", null],
     ["managed sandbox only", { enableManagedSandboxOnly: true }],
-  ] as const)("offers the simplified project form with %s", (_label, settings) => {
+  ] as const)("hides the local folder with %s", (_label, settings) => {
     render(settings);
 
     expect(documentText()).toContain("Source repos");
@@ -101,5 +108,48 @@ describe("NewProjectDialog — source repositories across host policies", () => 
       (button) => button.textContent?.trim() === "Choose",
     );
     expect(chooseButtons).toHaveLength(0);
+  });
+
+  it("offers a local folder when the policy is off", () => {
+    render({});
+
+    expect(documentText()).toContain("Source repos");
+    expect(documentText()).toContain("Local folder");
+    expect(localPathInput()).not.toBeNull();
+  });
+
+  it("creates the project with the local folder as its primary workspace", async () => {
+    vi.mocked(projectsApi.create).mockResolvedValue({ id: "project-1" } as never);
+    render({});
+
+    act(() => {
+      setInputValue(document.body.querySelector('input[placeholder="Project name"]')!, "Zoodex");
+      setInputValue(localPathInput()!, "/Users/me/code/zoodex/");
+    });
+    act(() => {
+      (document.body.querySelector("form") as HTMLFormElement).requestSubmit();
+    });
+
+    await vi.waitFor(() => expect(projectsApi.create).toHaveBeenCalledTimes(1));
+    expect(projectsApi.create).toHaveBeenCalledWith("company-1", {
+      name: "Zoodex",
+      status: "planned",
+      workspace: { name: "zoodex", sourceType: "local_path", cwd: "/Users/me/code/zoodex/", isPrimary: true },
+    });
+  });
+
+  it("rejects a relative local folder", async () => {
+    render({});
+
+    act(() => {
+      setInputValue(document.body.querySelector('input[placeholder="Project name"]')!, "Zoodex");
+      setInputValue(localPathInput()!, "code/zoodex");
+    });
+    act(() => {
+      (document.body.querySelector("form") as HTMLFormElement).requestSubmit();
+    });
+
+    await vi.waitFor(() => expect(documentText()).toContain("Local folder must be a full absolute path."));
+    expect(projectsApi.create).not.toHaveBeenCalled();
   });
 });

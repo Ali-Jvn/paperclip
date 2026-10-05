@@ -9,7 +9,14 @@ import { queryKeys } from "../lib/queryKeys";
 import { Dialog, DialogContent, DialogTitle } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { ProjectRepositoryInput, repositoryOptionsKey } from "./ProjectRepositoryInput";
+import { ChoosePathButton } from "./PathInstructionsModal";
 import { ConnectionSetupFlow } from "@/features/connections/ConnectionSetupFlow";
+import { useManagedSandboxOnly } from "../hooks/useManagedSandboxOnly";
+
+const isAbsolutePath = (value: string) => value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
+
+const folderName = (value: string) =>
+  value.replace(/[\\/]+$/, "").split(/[\\/]/).filter(Boolean).pop() ?? "Local folder";
 
 export function NewProjectDialog() {
   const { newProjectOpen, closeNewProject } = useDialog();
@@ -23,9 +30,23 @@ export function NewProjectForm({ companyId, onClose }: { companyId: string; onCl
   const [name, setName] = useState("");
   const [repos, setRepos] = useState<ProjectRepository[]>([]);
   const [connecting, setConnecting] = useState(false);
+  const [localPath, setLocalPath] = useState("");
+  const { hideHostPaths } = useManagedSandboxOnly();
   const input = useRef<HTMLInputElement>(null);
   const create = useMutation({
-    mutationFn: () => projectsApi.create(companyId, { name: name.trim(), status: "planned", repositoryIds: repos.map((repo) => repo.id) }),
+    mutationFn: async () => {
+      const cwd = hideHostPaths ? "" : localPath.trim();
+      if (cwd && !isAbsolutePath(cwd)) throw new Error("Local folder must be a full absolute path.");
+      const base = { name: name.trim(), status: "planned" };
+      const workspace = { name: folderName(cwd), sourceType: "local_path", cwd, isPrimary: true };
+      if (!cwd) return projectsApi.create(companyId, { ...base, repositoryIds: repos.map((repo) => repo.id) });
+      if (!repos.length) return projectsApi.create(companyId, { ...base, workspace });
+      // The create route takes either a workspace or repositoryIds, so a local
+      // folder alongside repos is attached right after the project exists.
+      const project = await projectsApi.create(companyId, { ...base, repositoryIds: repos.map((repo) => repo.id) });
+      await projectsApi.createWorkspace(project.id, workspace, companyId);
+      return project;
+    },
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: queryKeys.projects.all(companyId) });
       onClose();
@@ -55,6 +76,17 @@ export function NewProjectForm({ companyId, onClose }: { companyId: string; onCl
         </div>
         <div role="region" aria-label="Source repositories" tabIndex={0} className="min-h-0 overflow-y-auto overscroll-contain px-5 pb-1 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring">
           <ProjectRepositoryInput companyId={companyId} selected={repos} onChange={setRepos} onConnect={() => setConnecting(true)} disabled={create.isPending} />
+          {/* A host path means nothing under the managed-sandbox-only policy, so the field stays hidden until that policy is known to be off. */}
+          {!hideHostPaths && <div className="flex min-w-0 flex-col gap-3 pt-4 pb-3">
+            <div className="flex items-baseline gap-2"><span className="text-sm font-medium">Local folder</span><span className="text-xs text-muted-foreground">optional</span></div>
+            <div className="flex items-center gap-2">
+              <input aria-label="Local folder" value={localPath} disabled={create.isPending} onChange={(event) => { setLocalPath(event.target.value); create.reset(); }}
+                placeholder="/absolute/path/to/workspace"
+                className="h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 font-mono text-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring" />
+              <ChoosePathButton />
+            </div>
+            <p className="text-xs text-muted-foreground">Local agents read and write files for this project in this folder.</p>
+          </div>}
         </div>
         {create.isError && <p role="alert" className="px-5 pt-3 text-sm text-destructive">{create.error.message}</p>}
         <div className="flex shrink-0 justify-end gap-2 px-5 py-5">
