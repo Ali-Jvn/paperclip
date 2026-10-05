@@ -63,7 +63,7 @@ afterEach(() => {
 
 function renderMarkdown(
   children: string,
-  seededIssues: Array<{ identifier: string; status: string; title?: string }> = [],
+  seededIssues: Array<{ identifier: string; status: string; title?: string; cacheKey?: string }> = [],
   props: Partial<ComponentProps<typeof MarkdownBody>> = {},
 ) {
   const queryClient = new QueryClient({
@@ -75,7 +75,7 @@ function renderMarkdown(
   });
 
   for (const issue of seededIssues) {
-    queryClient.setQueryData(queryKeys.issues.detail(issue.identifier), {
+    queryClient.setQueryData(queryKeys.issues.detail(issue.cacheKey ?? issue.identifier), {
       id: issue.identifier,
       identifier: issue.identifier,
       status: issue.status,
@@ -109,6 +109,17 @@ describe("MarkdownBody", () => {
 
     expect(html).toMatch(/<ul dir="ltr"/);
     expect(html).toMatch(/<blockquote dir="ltr"/);
+  });
+
+  it("preserves a saved document anchor in an explicit task link", () => {
+    // Hover/focus can resolve the issue to its plain identifier. Both the old
+    // fragment-bearing cache key and the corrected plain key model that load.
+    const html = renderMarkdown("[Saved document](/PAP/issues/PAP-1271#document-output)", [
+      { identifier: "PAP-1271", status: "done" },
+      { identifier: "PAP-1271", status: "done", cacheKey: "PAP-1271#document-output" },
+    ], { linkIssueReferences: true });
+    expect(html).toContain('href="/issues/PAP-1271#document-output"');
+    expect(html).not.toContain("PAP-1271%23document-output");
   });
 
   it("renders markdown images without a resolver", () => {
