@@ -133,6 +133,7 @@ describe("NewProjectDialog — source repositories across host policies", () => 
     await vi.waitFor(() => expect(projectsApi.create).toHaveBeenCalledTimes(1));
     expect(projectsApi.create).toHaveBeenCalledWith("company-1", {
       name: "Zoodex",
+      color: expect.any(String),
       status: "planned",
       workspace: { name: "zoodex", sourceType: "local_path", cwd: "/Users/me/code/zoodex/", isPrimary: true },
     });
