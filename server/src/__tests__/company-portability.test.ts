@@ -122,6 +122,13 @@ vi.mock("../services/agents.js", () => ({
   agentService: () => agentSvc,
 }));
 
+vi.mock("../services/agent-lifecycle.js", () => ({
+  createAgentLifecycle: () => ({
+    requestHire: (...args: unknown[]) => agentSvc.create(...args),
+    pauseAgent: vi.fn(),
+  }),
+}));
+
 vi.mock("../services/access.js", () => ({
   accessService: () => accessSvc,
 }));
@@ -500,6 +507,17 @@ describe("company portability", () => {
     }));
   });
 
+  function exportCompanyAndAgents(portability: ReturnType<typeof companyPortabilityService>) {
+    return portability.exportBundle("company-1", {
+      include: {
+        company: true,
+        agents: true,
+        projects: false,
+        issues: false,
+      },
+    });
+  }
+
   it("renders high-volume YAML blocks without overflowing the call stack", () => {
     const tasks = Array.from({ length: 130_000 }, (_, index) => `issue-${index}`);
 
@@ -683,14 +701,7 @@ describe("company portability", () => {
     };
     const portability = companyPortabilityService(db as any);
 
-    const exported = await portability.exportBundle("company-1", {
-      include: {
-        company: true,
-        agents: true,
-        projects: false,
-        issues: false,
-      },
-    });
+    const exported = await exportCompanyAndAgents(portability);
 
     const extension = asTextFile(exported.files[".paperclip.yaml"]);
     expect(extension).toContain("permissionGrants:");
@@ -772,14 +783,7 @@ describe("company portability", () => {
       },
     ]);
 
-    const exported = await portability.exportBundle("company-1", {
-      include: {
-        company: true,
-        agents: true,
-        projects: false,
-        issues: false,
-      },
-    });
+    const exported = await exportCompanyAndAgents(portability);
 
     const serialized = JSON.stringify(exported);
     expect(serialized).not.toContain("sk-inline-secret-value");
@@ -1756,14 +1760,7 @@ describe("company portability", () => {
   it("reads env inputs back from .paperclip.yaml during preview import", async () => {
     const portability = companyPortabilityService({} as any);
 
-    const exported = await portability.exportBundle("company-1", {
-      include: {
-        company: true,
-        agents: true,
-        projects: false,
-        issues: false,
-      },
-    });
+    const exported = await exportCompanyAndAgents(portability);
 
     const preview = await portability.previewImport({
       source: {
@@ -3299,14 +3296,7 @@ describe("company portability", () => {
       },
     ]);
 
-    const exported = await portability.exportBundle("company-1", {
-      include: {
-        company: true,
-        agents: true,
-        projects: false,
-        issues: false,
-      },
-    });
+    const exported = await exportCompanyAndAgents(portability);
 
     const extension = asTextFile(exported.files[".paperclip.yaml"]);
     expect(extension).toContain("APIKEY:");
@@ -3343,14 +3333,7 @@ describe("company portability", () => {
       reason: "Existing skill matched; renamed to paperclip-2.",
     }]);
 
-    const exported = await portability.exportBundle("company-1", {
-      include: {
-        company: true,
-        agents: true,
-        projects: false,
-        issues: false,
-      },
-    });
+    const exported = await exportCompanyAndAgents(portability);
 
     agentSvc.list.mockResolvedValue([]);
 
@@ -3423,14 +3406,7 @@ describe("company portability", () => {
     });
 
     const portability = companyPortabilityService({} as any, storage as any);
-    const exported = await portability.exportBundle("company-1", {
-      include: {
-        company: true,
-        agents: true,
-        projects: false,
-        issues: false,
-      },
-    });
+    const exported = await exportCompanyAndAgents(portability);
 
     exported.files["images/company-logo.png"] = {
       encoding: "base64",
@@ -3496,14 +3472,7 @@ describe("company portability", () => {
       name: "ClaudeCoder",
     });
 
-    const exported = await portability.exportBundle("company-1", {
-      include: {
-        company: true,
-        agents: true,
-        projects: false,
-        issues: false,
-      },
-    });
+    const exported = await exportCompanyAndAgents(portability);
 
     agentSvc.list.mockResolvedValue([]);
 
@@ -3563,14 +3532,7 @@ describe("company portability", () => {
     })));
     agentSvc.list.mockClear();
 
-    const exported = await portability.exportBundle("company-1", {
-      include: {
-        company: true,
-        agents: true,
-        projects: false,
-        issues: false,
-      },
-    });
+    const exported = await exportCompanyAndAgents(portability);
 
     agentSvc.list.mockResolvedValue([]);
 
@@ -3615,14 +3577,7 @@ describe("company portability", () => {
   it("imports only selected files and leaves unchecked company metadata alone", async () => {
     const portability = companyPortabilityService({} as any);
 
-    const exported = await portability.exportBundle("company-1", {
-      include: {
-        company: true,
-        agents: true,
-        projects: false,
-        issues: false,
-      },
-    });
+    const exported = await exportCompanyAndAgents(portability);
 
     agentSvc.list.mockResolvedValue([]);
     projectSvc.list.mockResolvedValue([]);
@@ -3713,14 +3668,7 @@ describe("company portability", () => {
       name: "ClaudeCoder",
     });
 
-    const exported = await portability.exportBundle("company-1", {
-      include: {
-        company: true,
-        agents: true,
-        projects: false,
-        issues: false,
-      },
-    });
+    const exported = await exportCompanyAndAgents(portability);
 
     agentSvc.list.mockResolvedValue([]);
 
@@ -3795,14 +3743,7 @@ describe("company portability", () => {
       adapterConfig: input.adapterConfig,
     }));
 
-    const exported = await portability.exportBundle("company-1", {
-      include: {
-        company: true,
-        agents: true,
-        projects: false,
-        issues: false,
-      },
-    });
+    const exported = await exportCompanyAndAgents(portability);
 
     agentSvc.list.mockResolvedValue([]);
 
@@ -5493,14 +5434,7 @@ describe("company portability", () => {
       name: "ClaudeCoder",
     });
 
-    const exported = await portability.exportBundle("company-1", {
-      include: {
-        company: true,
-        agents: true,
-        projects: false,
-        issues: false,
-      },
-    });
+    const exported = await exportCompanyAndAgents(portability);
     const originalAgentsMarkdown = exported.files["agents/claudecoder/AGENTS.md"];
     expect(typeof originalAgentsMarkdown).toBe("string");
 
@@ -5552,14 +5486,7 @@ describe("company portability", () => {
 
   it("rejects dangerous adapter types on agent-safe imports", async () => {
     const portability = companyPortabilityService({} as any);
-    const exported = await portability.exportBundle("company-1", {
-      include: {
-        company: true,
-        agents: true,
-        projects: false,
-        issues: false,
-      },
-    });
+    const exported = await exportCompanyAndAgents(portability);
 
     agentSvc.list.mockResolvedValue([]);
 
@@ -5736,14 +5663,7 @@ describe("company portability", () => {
 
   it("imports new agents as active while preserving future hire approval settings", async () => {
     const portability = companyPortabilityService({} as any);
-    const exported = await portability.exportBundle("company-1", {
-      include: {
-        company: true,
-        agents: true,
-        projects: false,
-        issues: false,
-      },
-    });
+    const exported = await exportCompanyAndAgents(portability);
 
     agentSvc.list.mockResolvedValue([]);
     secretSvc.normalizeAdapterConfigForPersistence.mockResolvedValueOnce({
@@ -5812,14 +5732,7 @@ describe("company portability", () => {
       },
     })));
     agentSvc.list.mockClear();
-    const exported = await portability.exportBundle("company-1", {
-      include: {
-        company: true,
-        agents: true,
-        projects: false,
-        issues: false,
-      },
-    });
+    const exported = await exportCompanyAndAgents(portability);
 
     secretSvc.normalizeAdapterConfigForPersistence.mockResolvedValueOnce({
       normalized: "updated",

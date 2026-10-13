@@ -117,6 +117,24 @@ describeEmbeddedPostgres("reportRunFailure", () => {
     } as unknown as typeof heartbeatRuns.$inferSelect;
   }
 
+  it.each(["fresh", "resume", "provider_started"] as const)("keeps workspace base-ref observations reportable: %s", async mode => {
+    await seedCompanyAndAgent();
+    const run = buildRun({ errorCode: "configuration_incomplete", executionStage: "preparing", exitCode: null, signal: null,
+      runtimeMode: mode === "resume" ? "native" : "legacy", runnerProfileJson: mode === "resume" ? { nativeExecutionInput: {} } : null,
+      resultJson: { configurationIncomplete: { reason: "workspace_base_ref_unresolved", baseRefDiagnostic: {
+        schemaVersion: 1, remoteLookup: "resolved", authLookup: "resolved", fetch: "failed", fetchExitCode: 128,
+        fetchFailureKind: "remote_ref_not_found", refResolution: "failed", refExitCode: 128,
+      } }, executionRecovery: { kind: "bootstrap", providerWorkStarted: mode === "provider_started" } },
+    });
+    const before = structuredClone(run);
+    await reportRunFailure(db, run, { phase: "setup" });
+    expect(mockCaptureRunFailure).toHaveBeenCalledTimes(1);
+    expect(mockCaptureRunFailure).toHaveBeenCalledWith(expect.objectContaining({ diagnostics: expect.objectContaining({
+      execution: expect.objectContaining({ workspaceBaseRefFetch: "failed", workspaceBaseRefFetchFailureKind: "remote_ref_not_found" }),
+    }) }));
+    expect(run).toEqual(before);
+  });
+
   const gitConnection = { schemaVersion: 1, provider: "git", operation: "clone", reason: "authentication_failed" };
   const hermesConnection = { schemaVersion: 1, provider: "hermes_gateway", operation: "create_run", reason: "connection_refused" };
 
@@ -283,6 +301,39 @@ describeEmbeddedPostgres("reportRunFailure", () => {
     expect(mockCaptureRunFailure).toHaveBeenCalledWith(expect.objectContaining({ agentAdapter: "unknown" }));
   });
 
+  function providerQuotaRun(overrides: Partial<typeof heartbeatRuns.$inferSelect> = {}) {
+    return buildRun({
+      error: "ACP agent reported a terminal limit failure.\nYou've hit your session limit · resets 2am (UTC)",
+      errorCode: "provider_quota", executionStage: "dispatching", exitCode: 1, signal: null,
+      resultJson: { errorFamily: "provider_quota", stopReason: "adapter_failed" }, ...overrides,
+    });
+  }
+
+  it.each(["claude_local", "codex_local"])("keeps a classified %s provider quota wait local", async (adapterType) => {
+    await seedCompanyAndAgent({ adapterType });
+    const [run] = await db.insert(heartbeatRuns).values(providerQuotaRun()).returning();
+    const before = structuredClone(run);
+    for (const phase of [undefined, "execute"] as const) await reportRunFailure(db, run!, { phase });
+    expect(mockCaptureRunFailure).not.toHaveBeenCalled();
+    expect(await db.select().from(heartbeatRuns)).toEqual([before]);
+  });
+
+  it.each([
+    { status: "timed_out" }, { status: "cancelled", startedAt: new Date(0) }, { signal: "SIGTERM" },
+    { errorCode: "adapter_failed" }, { errorCode: "claude_transient_upstream" },
+    { resultJson: {} }, { resultJson: null }, { resultJson: { errorFamily: "transient_upstream" } },
+  ])("reports a provider quota outcome without matching adapter evidence: %j", async (overrides) => {
+    await seedCompanyAndAgent({ adapterType: "claude_local" });
+    await reportRunFailure(db, providerQuotaRun(overrides), { phase: "execute" });
+    expect(mockCaptureRunFailure).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a provider quota code reportable during setup", async () => {
+    await seedCompanyAndAgent({ adapterType: "claude_local" });
+    await reportRunFailure(db, providerQuotaRun(), { phase: "setup" });
+    expect(mockCaptureRunFailure).toHaveBeenCalledOnce();
+  });
+
   function aiSelectionRun(overrides: Partial<typeof heartbeatRuns.$inferSelect> = {}) {
     return buildRun({
       errorCode: "configuration_incomplete",
@@ -301,6 +352,7 @@ describeEmbeddedPostgres("reportRunFailure", () => {
   it.each([
     "ai_connection_responsible_user_missing", "ai_connection_default_missing",
     "ai_connection_missing", "ai_connection_incompatible", "ai_connection_unavailable",
+    "ai_connection_credential_not_shared",
   ])("keeps the proven AI selection blocker local: %s", async (selectionFailure) => {
     await seedCompanyAndAgent();
     const run = aiSelectionRun();
@@ -317,6 +369,23 @@ describeEmbeddedPostgres("reportRunFailure", () => {
       const run = aiSelectionRun();
       (run.resultJson!.configurationIncomplete as Record<string, unknown>).selectionFailure = selectionFailure;
       await reportRunFailure(db, run, { phase: "setup" });
+      expect(mockCaptureRunFailure).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(["resume", "provider_started", "outside_setup", "unmarked"] as const)(
+    "reports credential sharing denials without fresh pre-provider proof: %s", async (cause) => {
+      await seedCompanyAndAgent();
+      const run = aiSelectionRun();
+      (run.resultJson!.configurationIncomplete as Record<string, unknown>).selectionFailure = "ai_connection_credential_not_shared";
+      run.error = "This credential is not shared with the responsible user";
+      if (cause === "resume") {
+        run.runtimeMode = "native";
+        run.runnerProfileJson = { nativeExecutionInput: {} };
+      }
+      if (cause === "provider_started") run.resultJson!.executionRecovery = { kind: "bootstrap", providerWorkStarted: true };
+      if (cause === "unmarked") delete (run.resultJson!.configurationIncomplete as Record<string, unknown>).selectionFailure;
+      await reportRunFailure(db, run, { phase: cause === "outside_setup" ? "execute" : "setup" });
       expect(mockCaptureRunFailure).toHaveBeenCalledTimes(1);
     },
   );
